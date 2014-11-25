@@ -294,6 +294,7 @@ import sys
 
 from Crypto.Cipher import AES
 from Crypto.Util import Counter
+import time
 
 
 if __name__ == "__main__":
@@ -308,13 +309,17 @@ if __name__ == "__main__":
     if sys.argv[1] == "--encrypt" or sys.argv[1] == "-c":
         with open(sys.argv[2], 'rb') as f:
             plaintext = pad(f.read())
-            #ciphertext1 = aes_encrypt_cbc(plaintext, key, iv)
-            #ciphertext2 = AES.new(key, AES.MODE_CBC, iv).encrypt(plaintext)
-            ctr = Counter.new(64, prefix=nonce, initial_value=0)
-            ciphertext1 = aes_encrypt_ctr(plaintext, key, ctr)
+            #ctr = Counter.new(64, prefix=nonce, initial_value=0)
+            begin = time.time()
+            #ciphertext1 = aes_encrypt_ctr(plaintext, key, ctr)
+            ciphertext1 = aes_encrypt_cbc(plaintext, key, iv)
+            my_time = time.time() - begin
 
-            ctr = Counter.new(64, prefix=nonce, initial_value=0)
-            ciphertext2 = AES.new(key, AES.MODE_CTR, iv, counter=ctr).encrypt(plaintext)
+            #ctr = Counter.new(64, prefix=nonce, initial_value=0)
+            begin = time.time()
+            #ciphertext2 = AES.new(key, AES.MODE_CTR, iv, counter=ctr).encrypt(plaintext)
+            ciphertext2 = AES.new(key, AES.MODE_CBC, iv).encrypt(plaintext)
+            pycrypto_time = time.time() - begin
 
         with open(sys.argv[3], 'wb') as f:
             f.write(ciphertext1)
@@ -326,17 +331,24 @@ if __name__ == "__main__":
         with open(sys.argv[2], 'rb') as f:
             ciphertext = f.read()
             ctr = Counter.new(64, prefix=nonce, initial_value=0)
+            begin = time.time()
             plaintext1 = aes_decrypt_ctr(ciphertext, key, ctr)
-            plaintext1 = unpad(plaintext1)
+            #plaintext1 = unpad(plaintext1)
+            plaintext1 = aes_decrypt_cbc(ciphertext, key, iv)
+            my_time = time.time() - begin
 
             ctr = Counter.new(64, prefix=nonce, initial_value=0)
-            plaintext2 = AES.new(key, AES.MODE_CTR, iv, counter=ctr).decrypt(ciphertext)
+            begin = time.time()
+            #plaintext2 = AES.new(key, AES.MODE_CTR, iv, counter=ctr).decrypt(ciphertext)
+            plaintext2 = AES.new(key, AES.MODE_CBC, iv).decrypt(ciphertext)
             plaintext2 = unpad(plaintext2)
-            #plaintext1 = aes_decrypt_cbc(ciphertext, key, iv)
-            #plaintext2 = AES.new(key, AES.MODE_CBC, iv).decrypt(ciphertext)
+            pycrypto_time = time.time() - begin
 
         with open(sys.argv[3], 'wb') as f:
             f.write(plaintext1)
 
         with open(sys.argv[4], 'wb') as f:
             f.write(plaintext2)
+
+    print("my aes time: " + str(my_time))
+    print("pycrypto time: " + str(pycrypto_time))
