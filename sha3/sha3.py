@@ -20,7 +20,7 @@ class SHA3:
 
     offmodw = [x % (1600 // 25) for x in offset]
 
-    def __init__(self, message, output_bits):
+    def __init__(self, output_bits, message=b''):
         self.d = output_bits
         self.c, self.cc = output_bits * 2, output_bits // 4
         self.r = SHA3.b - self.c
@@ -29,13 +29,20 @@ class SHA3:
         self.extra = b''
 
         self.state = array.array('Q', [0] * 25)
-        self.sponge_next(message)
+        self.absorb(message)
 
     @staticmethod
     def array_xor(x, y):
         return array.array('Q', [a ^ b for a, b in zip(x, y)])
 
-    def sponge_next(self, message):
+    def append(self, message):
+        self.absorb(self.extra + message)
+
+    def reset(self, message=b''):
+        self.state = array.array('Q', [0] * 25)
+        self.absorb(message)
+
+    def absorb(self, message):
         n = len(message) // self.rr
         self.extra_bytes = len(message) % self.rr
         self.extra = message[n * self.rr:]
@@ -148,16 +155,22 @@ class SHA3:
         return array.array('Q', [s[0] ^ (SHA3.rc[ir] & SHA3.mask)]) + s[1:]
 
 
-SHA3_224 = partial(SHA3, output_bits=224)
-SHA3_256 = partial(SHA3, output_bits=256)
-SHA3_384 = partial(SHA3, output_bits=384)
-SHA3_512 = partial(SHA3, output_bits=512)
+SHA3_224 = partial(SHA3, 224)
+SHA3_256 = partial(SHA3, 256)
+SHA3_384 = partial(SHA3, 384)
+SHA3_512 = partial(SHA3, 512)
 
 
 # main
 def main():
     m = b'abc' * 200
     s = SHA3_224(m)
+    print(s.hexdigest())
+
+    s.reset()
+    s.append(b'abc' * 100)
+    s.append(b'abc' * 49)
+    s.append(b'abc' * 51)
     print(s.hexdigest())
 
 if __name__ == '__main__':
