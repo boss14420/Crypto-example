@@ -1,0 +1,300 @@
+#include <iostream>
+#include <array>
+#include <limits>
+#include <cstdint>
+#include <cstring>
+#include <cstdio>
+
+using std::uint64_t;
+
+template <int HashSize>
+class SHA3
+{
+    static_assert(HashSize == 224 || HashSize == 256 || HashSize == 384 || HashSize == 512,
+                    "HashSize must be 224, 256, 384, 512");
+public:
+    static const int nr = 24;
+    typedef uint64_t Lane;
+    typedef unsigned char byte;
+    typedef Lane State[25];
+
+    static const int b = 1600;
+    static const int w = b / 25;
+    static const Lane mask = std::numeric_limits<Lane>::max();
+
+    static const int d = HashSize, dd = d / 8;
+    static const int c = HashSize * 2, cc = c / 8;
+    static const int r = b - c, rr = r / 8;
+    static const Lane rc[];
+
+    #define PAD_OF(a, b) (b + (-(int)a -1) % b + 1)
+    #define HEX_DUMP(s, l) for (int i = 0; i != l; ++i) { \
+                                    std::printf("%02X", *(reinterpret_cast<unsigned char const*>(s) + i)); \
+                                } std::putchar('\n')
+
+    State state;
+    std::size_t extra_bytes;
+    char extra[rr];
+    mutable char _hex_digest[dd * 2 + 1];
+    mutable bool _updated = false;
+
+public:
+    SHA3(char const *message = nullptr, std::size_t len = 0) {
+        reset(message, len);
+    }
+
+    char *digest(char *dst) const
+    {
+        if (!_updated) {
+            calculate_digest();
+            _updated = true;
+        }
+        std::memcpy(dst, reinterpret_cast<char*>(state), dd);
+        return dst;
+    }
+
+    char *hex_digest(char *dst) const
+    {
+        if (!_updated) {
+            calculate_digest();
+            _updated = true;
+        }
+        std::memcpy(dst, _hex_digest, dd*2+1);
+        return dst;
+    }
+
+    SHA3& append(char const *message, std::size_t len)
+    {
+        // append to extra
+        std::size_t nbytes_pad = PAD_OF(extra_bytes, rr);
+        nbytes_pad = std::min(nbytes_pad, len);
+        std::memcpy(extra + extra_bytes, message, nbytes_pad);
+        extra_bytes += nbytes_pad;
+//        std::cout << len << ", " << nbytes_pad << ", " << extra_bytes << '\n';
+
+        if (extra_bytes == rr) {
+            absorb_part(extra, state);
+            absorb(message + nbytes_pad, len - nbytes_pad);
+        }
+
+//        std::cout << extra_bytes << '\n';
+        _updated = false;
+        return *this;
+    }
+
+    SHA3& reset(char const *message = nullptr, std::size_t len = 0)
+    {
+        std::memset(state, 0, 8*25);
+        absorb(message, len);
+        _updated = false;
+        return *this;
+    }
+
+private:
+    static void absorb_part(char const *message, State &state)
+    {
+        // state = state XOR (message + '0' * cc)
+        Lane *ps = state;
+        char const *pm = message;
+        for (; pm < message + rr; pm += 8, ++ps) {
+            // TODO: big-endian systems?
+            *ps ^= *reinterpret_cast<Lane const*>(pm);
+        }
+        char *pcs = reinterpret_cast<char *>(ps);
+        for (; pm < message + rr; ++pm, ++pcs)
+            *pcs ^= *pm;
+
+        // keccak
+        keccak_p(state);
+    }
+
+    void absorb(char const *message, std::size_t len)
+    {
+        std::size_t n = len / rr;
+        extra_bytes = len % rr;
+        std::memcpy(extra, message + n * rr, extra_bytes);
+
+        for (std::size_t i = 0; i != n; ++i) {
+            // absorb
+            absorb_part(message + rr * i, state);
+        }
+    }
+
+    void calculate_digest() const
+    {
+        // pad
+        byte last_part[rr];
+        std::memcpy((char*)last_part, extra, extra_bytes);
+        std::size_t nbytes_pad = PAD_OF(extra_bytes, rr);
+
+        // TODO: generic padding (for SHAKE*)
+        if (nbytes_pad > 1) {
+            last_part[extra_bytes] = 0x06;
+            std::memset((char*)last_part + extra_bytes + 1, 0, nbytes_pad-2);
+            last_part[rr - 1] = 0x80;
+        } else last_part[rr - 1] = 0x86;
+
+        State digest;
+        std::memcpy((char*)digest, reinterpret_cast<char const*>(state), sizeof(state));
+
+        // absorb last part
+        absorb_part((char*)last_part, digest);
+
+        // result
+        char const *ps = reinterpret_cast<char const*>(digest);
+        for (int i = 0; i != dd; ++i) {
+            std::sprintf(_hex_digest + i*2, "%02X", (unsigned char)ps[i]);
+        }
+        _hex_digest[dd * 2] = '\0';
+    }
+
+    static Lane rot1(Lane x) {
+        return ((x << 1) | (x >> (w - 1))) & mask;
+    }
+
+    static void rot(Lane &x, int b) {
+        x = ((x << b) | (x >> (w - b))) & mask;
+    }
+
+    static void keccak_p(State &s)
+    {
+        State t;
+        Lane c[5], d[5], *ps;
+        for (int ir = 0; ir != nr; ++ir) {
+            // theta
+            c[0] = s[0] ^ s[5] ^ s[10] ^ s[15] ^ s[20];
+            c[1] = s[1] ^ s[6] ^ s[11] ^ s[16] ^ s[21];
+            c[2] = s[2] ^ s[7] ^ s[12] ^ s[17] ^ s[22];
+            c[3] = s[3] ^ s[8] ^ s[13] ^ s[18] ^ s[23];
+            c[4] = s[4] ^ s[9] ^ s[14] ^ s[19] ^ s[24];
+
+            d[0] = c[4] ^ rot1(c[1]);
+            d[1] = c[0] ^ rot1(c[2]);
+            d[2] = c[1] ^ rot1(c[3]);
+            d[3] = c[2] ^ rot1(c[4]);
+            d[4] = c[3] ^ rot1(c[0]);
+
+//            for (int i = 0; i != 25; ++i)
+//                s[i] ^= d[i % 5];
+
+            ps = s-1;
+            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
+            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
+            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
+            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
+            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
+
+            // rho
+//            rot(s[1], 1); rot(s[2], 62); rot(s[3], 28); rot(s[4], 27);
+//            rot(s[5], 36); rot(s[6], 44); rot(s[7], 6); rot(s[8], 55); rot(s[9], 20);
+//            rot(s[10], 3); rot(s[11], 10); rot(s[12], 43); rot(s[13], 25); rot(s[14], 39);
+//            rot(s[15], 41); rot(s[16], 45); rot(s[17], 15); rot(s[18], 21); rot(s[19], 8);
+//            rot(s[20], 18); rot(s[21], 2); rot(s[22], 61); rot(s[23], 56); rot(s[24], 14);
+
+            ps = s;
+            rot(*++ps, 1); rot(*++ps, 62); rot(*++ps, 28); rot(*++ps, 27);
+            rot(*++ps, 36); rot(*++ps, 44); rot(*++ps, 6); rot(*++ps, 55); rot(*++ps, 20);
+            rot(*++ps, 3); rot(*++ps, 10); rot(*++ps, 43); rot(*++ps, 25); rot(*++ps, 39);
+            rot(*++ps, 41); rot(*++ps, 45); rot(*++ps, 15); rot(*++ps, 21); rot(*++ps, 8);
+            rot(*++ps, 18); rot(*++ps, 2); rot(*++ps, 61); rot(*++ps, 56); rot(*++ps, 14);
+
+            // pi
+//            t[0] = s[0]; t[1] = s[6]; t[2] = s[12]; t[3] = s[18]; t[4] = s[24];
+//            t[5] = s[3]; t[6] = s[9]; t[7] = s[10]; t[8] = s[16]; t[9] = s[22];
+//            t[10] = s[1]; t[11] = s[7]; t[12] = s[13]; t[13] = s[19]; t[14] = s[20];
+//            t[15] = s[4]; t[16] = s[5]; t[17] = s[11]; t[18] = s[17]; t[19] = s[23];
+//            t[20] = s[2]; t[21] = s[8]; t[22] = s[14]; t[23] = s[15]; t[24] = s[21];
+
+            ps = t-1;
+            *++ps = s[0]; *++ps = s[6]; *++ps = s[12]; *++ps = s[18]; *++ps = s[24];
+            *++ps = s[3]; *++ps = s[9]; *++ps = s[10]; *++ps = s[16]; *++ps = s[22];
+            *++ps = s[1]; *++ps = s[7]; *++ps = s[13]; *++ps = s[19]; *++ps = s[20];
+            *++ps = s[4]; *++ps = s[5]; *++ps = s[11]; *++ps = s[17]; *++ps = s[23];
+            *++ps = s[2]; *++ps = s[8]; *++ps = s[14]; *++ps = s[15]; *++ps = s[21];
+
+            // chi
+//            s[0] = t[0] ^ (~t[1] & t[2]); s[1] = t[1] ^ (~t[2] & t[3]); s[2] = t[2] ^ (~t[3] & t[4]);
+//            s[3] = t[3] ^ (~t[4] & t[0]); s[4] = t[4] ^ (~t[0] & t[1]);
+//            s[5] = t[5] ^ (~t[6] & t[7]); s[6] = t[6] ^ (~t[7] & t[8]); s[7] = t[7] ^ (~t[8] & t[9]);
+//            s[8] = t[8] ^ (~t[9] & t[5]); s[9] = t[9] ^ (~t[5] & t[6]);
+//            s[10] = t[10] ^ (~t[11] & t[12]); s[11] = t[11] ^ (~t[12] & t[13]); s[12] = t[12] ^ (~t[13] & t[14]);
+//            s[13] = t[13] ^ (~t[14] & t[10]); s[14] = t[14] ^ (~t[10] & t[11]);
+//            s[15] = t[15] ^ (~t[16] & t[17]); s[16] = t[16] ^ (~t[17] & t[18]); s[17] = t[17] ^ (~t[18] & t[19]);
+//            s[18] = t[18] ^ (~t[19] & t[15]); s[19] = t[19] ^ (~t[15] & t[16]);
+//            s[20] = t[20] ^ (~t[21] & t[22]); s[21] = t[21] ^ (~t[22] & t[23]); s[22] = t[22] ^ (~t[23] & t[24]);
+//            s[23] = t[23] ^ (~t[24] & t[20]); s[24] = t[24] ^ (~t[20] & t[21]);
+
+            ps = s - 1;
+            *++ps = t[0] ^ (~t[1] & t[2]); *++ps = t[1] ^ (~t[2] & t[3]); *++ps = t[2] ^ (~t[3] & t[4]);
+            *++ps = t[3] ^ (~t[4] & t[0]); *++ps = t[4] ^ (~t[0] & t[1]);
+            *++ps = t[5] ^ (~t[6] & t[7]); *++ps = t[6] ^ (~t[7] & t[8]); *++ps = t[7] ^ (~t[8] & t[9]);
+            *++ps = t[8] ^ (~t[9] & t[5]); *++ps = t[9] ^ (~t[5] & t[6]);
+            *++ps = t[10] ^ (~t[11] & t[12]); *++ps = t[11] ^ (~t[12] & t[13]); *++ps = t[12] ^ (~t[13] & t[14]);
+            *++ps = t[13] ^ (~t[14] & t[10]); *++ps = t[14] ^ (~t[10] & t[11]);
+            *++ps = t[15] ^ (~t[16] & t[17]); *++ps = t[16] ^ (~t[17] & t[18]); *++ps = t[17] ^ (~t[18] & t[19]);
+            *++ps = t[18] ^ (~t[19] & t[15]); *++ps = t[19] ^ (~t[15] & t[16]);
+            *++ps = t[20] ^ (~t[21] & t[22]); *++ps = t[21] ^ (~t[22] & t[23]); *++ps = t[22] ^ (~t[23] & t[24]);
+            *++ps = t[23] ^ (~t[24] & t[20]); *++ps = t[24] ^ (~t[20] & t[21]);
+
+            // iota
+            s[0] ^= rc[ir];
+        }
+    }
+
+    #undef PAD_OF
+    #undef HEX_DUMP
+};
+
+template <int HashSize>
+const typename SHA3<HashSize>::Lane SHA3<HashSize>::rc[] = {
+        0x0000000000000001, 0x0000000000008082,
+        0x800000000000808A, 0x8000000080008000,
+        0x000000000000808B, 0x0000000080000001,
+        0x8000000080008081, 0x8000000000008009,
+        0x000000000000008A, 0x0000000000000088,
+        0x0000000080008009, 0x000000008000000A,
+        0x000000008000808B, 0x800000000000008B,
+        0x8000000000008089, 0x8000000000008003,
+        0x8000000000008002, 0x8000000000000080,
+        0x000000000000800A, 0x800000008000000A,
+        0x8000000080008081, 0x8000000000008080,
+        0x0000000080000001, 0x8000000080008008
+};
+
+#include <vector>
+#include <fstream>
+#include <memory>
+#include <cstdlib>
+
+template<int HashSize>
+char* calculate_sha3(FILE *is, char *digest, std::pair<char*, std::ptrdiff_t> &buffer)
+{
+    SHA3<HashSize> s;
+    while (!std::feof(is)) {
+        auto sz = std::fread(buffer.first, 1, buffer.second, is);
+        s.append(buffer.first, sz);
+    }
+    s.hex_digest(digest);
+    return digest;
+}
+
+#define HashSize 224
+
+int main(int argc, char *argv[]) {
+    char digest[HashSize*2+1];
+    auto buffer = std::get_temporary_buffer<char>(90000 * SHA3<HashSize>::rr);
+
+    if (argc == 1) {
+        calculate_sha3<HashSize>(stdin, digest, buffer);
+        std::cout << digest << "\t-\n";
+    } else {
+        for (int i = 1; i < argc; ++i) {
+            FILE *f = std::fopen(argv[1], "rb");
+            calculate_sha3<HashSize>(f, digest, buffer);
+            std::cout << digest << "\t" << argv[i] << '\n';
+        }
+    }
+
+    std::return_temporary_buffer(buffer.first);
+    return 0;
+}
