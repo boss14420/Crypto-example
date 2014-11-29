@@ -96,11 +96,11 @@ class SHA3:
     lanesidx = [5 * x + (x + 3 * y) % 5
                 for y, x in map(divmod5, range(25))]
 
-    # chi: indexes of 2 next lanes
-    n2lanes = [(y * 5 + (x + 1) % 5, y * 5 + (x + 2) % 5)
-                   for y, x in map(divmod5, range(25))]
+    # chi: indexes of lane 1 and 2 next lanes
+    n2lanes = [(i, y * 5 + (x + 1) % 5, y * 5 + (x + 2) % 5)
+               for i, (y, x) in zip(range(25), map(divmod5, range(25)))]
 
-    #  Round constants
+    # Round constants
     rc = [0x0000000000000001, 0x0000000000008082,
           0x800000000000808A, 0x8000000080008000,
           0x000000000000808B, 0x0000000080000001,
@@ -116,41 +116,58 @@ class SHA3:
 
     # KECCAK-p
     @staticmethod
-    def keccak_p(ss):
-        s = ss
+    def keccak_p(s):
         for ir in range(SHA3.nr):
             # theta
-            c = [
-                s[0] ^ s[5] ^ s[10] ^ s[15] ^ s[20],
-                s[1] ^ s[6] ^ s[11] ^ s[16] ^ s[21],
-                s[2] ^ s[7] ^ s[12] ^ s[17] ^ s[22],
-                s[3] ^ s[8] ^ s[13] ^ s[18] ^ s[23],
-                s[4] ^ s[9] ^ s[14] ^ s[19] ^ s[24]]
+            c = [s[0] ^ s[5] ^ s[10] ^ s[15] ^ s[20],
+                 s[1] ^ s[6] ^ s[11] ^ s[16] ^ s[21],
+                 s[2] ^ s[7] ^ s[12] ^ s[17] ^ s[22],
+                 s[3] ^ s[8] ^ s[13] ^ s[18] ^ s[23],
+                 s[4] ^ s[9] ^ s[14] ^ s[19] ^ s[24]]
 
-            d = [
-                c[4] ^ SHA3.rot1(c[1]),
-                c[0] ^ SHA3.rot1(c[2]),
-                c[1] ^ SHA3.rot1(c[3]),
-                c[2] ^ SHA3.rot1(c[4]),
-                c[3] ^ SHA3.rot1(c[0])
-            ]
+            d = [c[4] ^ SHA3.rot1(c[1]),
+                 c[0] ^ SHA3.rot1(c[2]),
+                 c[1] ^ SHA3.rot1(c[3]),
+                 c[2] ^ SHA3.rot1(c[4]),
+                 c[3] ^ SHA3.rot1(c[0])]
 
             s = [s[i] ^ d[i % 5] for i in range(25)]
 
             # rho
-            s = [SHA3.rot(x, b) for x, b in zip(s, SHA3.offmodw)]
+            # s = [SHA3.rot(x, b) for x, b in zip(s, SHA3.offmodw)]
+            s = [s[0], SHA3.rot(s[1], 1), SHA3.rot(s[2], 62), SHA3.rot(s[3], 28), SHA3.rot(s[4], 27),
+                 SHA3.rot(s[5], 36), SHA3.rot(s[6], 44), SHA3.rot(s[7], 6), SHA3.rot(s[8], 55), SHA3.rot(s[9], 20),
+                 SHA3.rot(s[10], 3), SHA3.rot(s[11], 10), SHA3.rot(s[12], 43), SHA3.rot(s[13], 25), SHA3.rot(s[14], 39),
+                 SHA3.rot(s[15], 41), SHA3.rot(s[16], 45), SHA3.rot(s[17], 15), SHA3.rot(s[18], 21), SHA3.rot(s[19], 8),
+                 SHA3.rot(s[20], 18), SHA3.rot(s[21], 2), SHA3.rot(s[22], 61), SHA3.rot(s[23], 56), SHA3.rot(s[24], 14)]
 
             # pi
-            s = [s[idx] for idx in SHA3.lanesidx]
+            # s = [s[idx] for idx in SHA3.lanesidx]
+            s = [s[0], s[6], s[12], s[18], s[24],
+                 s[3], s[9], s[10], s[16], s[22],
+                 s[1], s[7], s[13], s[19], s[20],
+                 s[4], s[5], s[11], s[17], s[23],
+                 s[2], s[8], s[14], s[15], s[21]]
 
             # chi
-            s = [s[i] ^ (~s[i1] & s[i2])
-                 for (i1, i2), i in zip(SHA3.n2lanes, range(25))]
+            # s = [s[i] ^ (~s[i1] & s[i2]) for i, i1, i2 in SHA3.n2lanes]
+            s = [
+                s[0] ^ (~s[1] & s[2]), s[1] ^ (~s[2] & s[3]), s[2] ^ (~s[3] & s[4]),
+                s[3] ^ (~s[4] & s[0]), s[4] ^ (~s[0] & s[1]),
+                s[5] ^ (~s[6] & s[7]), s[6] ^ (~s[7] & s[8]), s[7] ^ (~s[8] & s[9]),
+                s[8] ^ (~s[9] & s[5]), s[9] ^ (~s[5] & s[6]),
+                s[10] ^ (~s[11] & s[12]), s[11] ^ (~s[12] & s[13]), s[12] ^ (~s[13] & s[14]),
+                s[13] ^ (~s[14] & s[10]), s[14] ^ (~s[10] & s[11]),
+                s[15] ^ (~s[16] & s[17]), s[16] ^ (~s[17] & s[18]), s[17] ^ (~s[18] & s[19]),
+                s[18] ^ (~s[19] & s[15]), s[19] ^ (~s[15] & s[16]),
+                s[20] ^ (~s[21] & s[22]), s[21] ^ (~s[22] & s[23]), s[22] ^ (~s[23] & s[24]),
+                s[23] ^ (~s[24] & s[20]), s[24] ^ (~s[20] & s[21]),
+            ]
 
             # iota
             s[0] ^= (SHA3.rc[ir] & SHA3.mask)
 
-        return array.array('Q', s)
+        return s
 
 
 SHA3_224 = partial(SHA3, 224)
@@ -161,8 +178,12 @@ SHA3_512 = partial(SHA3, 512)
 
 # main
 def main():
-    m = b'abc' * 200
+    m = b'abc'
     s = SHA3_224(m)
+    print(s.hexdigest())
+
+    m = b'abc' * 200
+    s.reset(m)
     print(s.hexdigest())
 
     s.reset()
@@ -171,7 +192,7 @@ def main():
     s.append(b'abc' * 51)
     print(s.hexdigest())
 
-    s.reset()
+    s.reset(b'abc' * 50000)
     print(s.hexdigest())
 
 
