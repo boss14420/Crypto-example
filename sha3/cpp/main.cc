@@ -52,8 +52,9 @@ int main(int argc, char *argv[]) {
         std::cout << digest << "\t-\n";
     } else {
         for (int i = 1; i < argc; ++i) {
-            FILE *f = std::fopen(argv[1], "rb");
+            FILE *f = std::fopen(argv[i], "rb");
             calculate_sha3<HashSize>(f, digest, aligned_buff, BUFFSIZE);
+            std::fclose(f);
             std::cout << digest << "\t" << argv[i] << '\n';
         }
     }
