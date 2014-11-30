@@ -27,15 +27,14 @@ public:
     static const int r = b - c, rr = r / 8;
     static const Lane rc[];
 
-    #define PAD_OF(a, b) (b + (-(int)a -1) % b + 1)
     #define HEX_DUMP(s, l) for (int i = 0; i != l; ++i) { \
                                     std::printf("%02X", *(reinterpret_cast<unsigned char const*>(s) + i)); \
                                 } std::putchar('\n')
 
-    State state;
+    alignas(16) State state;
+    alignas(16) char extra[rr];
+    alignas(16) mutable char _hex_digest[dd * 2 + 1];
     std::size_t extra_bytes;
-    char extra[rr];
-    mutable char _hex_digest[dd * 2 + 1];
     mutable bool _updated = false;
 
 public:
@@ -66,7 +65,7 @@ public:
     SHA3& append(char const *message, std::size_t len)
     {
         // append to extra
-        std::size_t nbytes_pad = PAD_OF(extra_bytes, rr);
+        std::size_t nbytes_pad = (rr - extra_bytes) % rr;
         nbytes_pad = std::min(nbytes_pad, len);
         std::memcpy(extra + extra_bytes, message, nbytes_pad);
         extra_bytes += nbytes_pad;
@@ -75,6 +74,8 @@ public:
         if (extra_bytes == rr) {
             absorb_part(extra, state);
             absorb(message + nbytes_pad, len - nbytes_pad);
+        } else if(extra_bytes == 0) {
+            absorb(message, len);
         }
 
 //        std::cout << extra_bytes << '\n';
@@ -123,9 +124,9 @@ private:
     void calculate_digest() const
     {
         // pad
-        byte last_part[rr];
+        alignas(16) byte last_part[rr];
         std::memcpy((char*)last_part, extra, extra_bytes);
-        std::size_t nbytes_pad = PAD_OF(extra_bytes, rr);
+        std::size_t nbytes_pad = rr - (extra_bytes % rr);
 
         // TODO: generic padding (for SHAKE*)
         if (nbytes_pad > 1) {
@@ -134,7 +135,7 @@ private:
             last_part[rr - 1] = 0x80;
         } else last_part[rr - 1] = 0x86;
 
-        State digest;
+        alignas(16) State digest;
         std::memcpy((char*)digest, reinterpret_cast<char const*>(state), sizeof(state));
 
         // absorb last part
@@ -158,8 +159,9 @@ private:
 
     static void keccak_p(State &s)
     {
-        State t;
-        Lane c[5], d[5], *ps;
+        alignas(16) State t;
+        alignas(16) Lane c[5], d[5];
+        Lane *ps;
         for (int ir = 0; ir != nr; ++ir) {
             // theta
             c[0] = s[0] ^ s[5] ^ s[10] ^ s[15] ^ s[20];
@@ -176,65 +178,70 @@ private:
 
 //            for (int i = 0; i != 25; ++i)
 //                s[i] ^= d[i % 5];
+            s[0] ^= d[0]; s[1] ^= d[1]; s[2] ^= d[2]; s[3] ^= d[3]; s[4] ^= d[4];
+            s[5] ^= d[0]; s[6] ^= d[1]; s[7] ^= d[2]; s[8] ^= d[3]; s[9] ^= d[4];
+            s[10] ^= d[0]; s[11] ^= d[1]; s[12] ^= d[2]; s[13] ^= d[3]; s[14] ^= d[4];
+            s[15] ^= d[0]; s[16] ^= d[1]; s[17] ^= d[2]; s[18] ^= d[3]; s[19] ^= d[4];
+            s[20] ^= d[0]; s[21] ^= d[1]; s[22] ^= d[2]; s[23] ^= d[3]; s[24] ^= d[4];
 
-            ps = s-1;
-            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
-            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
-            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
-            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
-            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
+//            ps = s-1;
+//            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
+//            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
+//            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
+//            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
+//            *++ps ^= d[0]; *++ps ^= d[1]; *++ps ^= d[2]; *++ps ^= d[3]; *++ps ^= d[4];
 
             // rho
-//            rot(s[1], 1); rot(s[2], 62); rot(s[3], 28); rot(s[4], 27);
-//            rot(s[5], 36); rot(s[6], 44); rot(s[7], 6); rot(s[8], 55); rot(s[9], 20);
-//            rot(s[10], 3); rot(s[11], 10); rot(s[12], 43); rot(s[13], 25); rot(s[14], 39);
-//            rot(s[15], 41); rot(s[16], 45); rot(s[17], 15); rot(s[18], 21); rot(s[19], 8);
-//            rot(s[20], 18); rot(s[21], 2); rot(s[22], 61); rot(s[23], 56); rot(s[24], 14);
+            rot(s[1], 1); rot(s[2], 62); rot(s[3], 28); rot(s[4], 27);
+            rot(s[5], 36); rot(s[6], 44); rot(s[7], 6); rot(s[8], 55); rot(s[9], 20);
+            rot(s[10], 3); rot(s[11], 10); rot(s[12], 43); rot(s[13], 25); rot(s[14], 39);
+            rot(s[15], 41); rot(s[16], 45); rot(s[17], 15); rot(s[18], 21); rot(s[19], 8);
+            rot(s[20], 18); rot(s[21], 2); rot(s[22], 61); rot(s[23], 56); rot(s[24], 14);
 
-            ps = s;
-            rot(*++ps, 1); rot(*++ps, 62); rot(*++ps, 28); rot(*++ps, 27);
-            rot(*++ps, 36); rot(*++ps, 44); rot(*++ps, 6); rot(*++ps, 55); rot(*++ps, 20);
-            rot(*++ps, 3); rot(*++ps, 10); rot(*++ps, 43); rot(*++ps, 25); rot(*++ps, 39);
-            rot(*++ps, 41); rot(*++ps, 45); rot(*++ps, 15); rot(*++ps, 21); rot(*++ps, 8);
-            rot(*++ps, 18); rot(*++ps, 2); rot(*++ps, 61); rot(*++ps, 56); rot(*++ps, 14);
+//            ps = s;
+//            rot(*++ps, 1); rot(*++ps, 62); rot(*++ps, 28); rot(*++ps, 27);
+//            rot(*++ps, 36); rot(*++ps, 44); rot(*++ps, 6); rot(*++ps, 55); rot(*++ps, 20);
+//            rot(*++ps, 3); rot(*++ps, 10); rot(*++ps, 43); rot(*++ps, 25); rot(*++ps, 39);
+//            rot(*++ps, 41); rot(*++ps, 45); rot(*++ps, 15); rot(*++ps, 21); rot(*++ps, 8);
+//            rot(*++ps, 18); rot(*++ps, 2); rot(*++ps, 61); rot(*++ps, 56); rot(*++ps, 14);
 
             // pi
-//            t[0] = s[0]; t[1] = s[6]; t[2] = s[12]; t[3] = s[18]; t[4] = s[24];
-//            t[5] = s[3]; t[6] = s[9]; t[7] = s[10]; t[8] = s[16]; t[9] = s[22];
-//            t[10] = s[1]; t[11] = s[7]; t[12] = s[13]; t[13] = s[19]; t[14] = s[20];
-//            t[15] = s[4]; t[16] = s[5]; t[17] = s[11]; t[18] = s[17]; t[19] = s[23];
-//            t[20] = s[2]; t[21] = s[8]; t[22] = s[14]; t[23] = s[15]; t[24] = s[21];
+            t[0] = s[0]; t[1] = s[6]; t[2] = s[12]; t[3] = s[18]; t[4] = s[24];
+            t[5] = s[3]; t[6] = s[9]; t[7] = s[10]; t[8] = s[16]; t[9] = s[22];
+            t[10] = s[1]; t[11] = s[7]; t[12] = s[13]; t[13] = s[19]; t[14] = s[20];
+            t[15] = s[4]; t[16] = s[5]; t[17] = s[11]; t[18] = s[17]; t[19] = s[23];
+            t[20] = s[2]; t[21] = s[8]; t[22] = s[14]; t[23] = s[15]; t[24] = s[21];
 
-            ps = t-1;
-            *++ps = s[0]; *++ps = s[6]; *++ps = s[12]; *++ps = s[18]; *++ps = s[24];
-            *++ps = s[3]; *++ps = s[9]; *++ps = s[10]; *++ps = s[16]; *++ps = s[22];
-            *++ps = s[1]; *++ps = s[7]; *++ps = s[13]; *++ps = s[19]; *++ps = s[20];
-            *++ps = s[4]; *++ps = s[5]; *++ps = s[11]; *++ps = s[17]; *++ps = s[23];
-            *++ps = s[2]; *++ps = s[8]; *++ps = s[14]; *++ps = s[15]; *++ps = s[21];
+//            ps = t-1;
+//            *++ps = s[0]; *++ps = s[6]; *++ps = s[12]; *++ps = s[18]; *++ps = s[24];
+//            *++ps = s[3]; *++ps = s[9]; *++ps = s[10]; *++ps = s[16]; *++ps = s[22];
+//            *++ps = s[1]; *++ps = s[7]; *++ps = s[13]; *++ps = s[19]; *++ps = s[20];
+//            *++ps = s[4]; *++ps = s[5]; *++ps = s[11]; *++ps = s[17]; *++ps = s[23];
+//            *++ps = s[2]; *++ps = s[8]; *++ps = s[14]; *++ps = s[15]; *++ps = s[21];
 
             // chi
-//            s[0] = t[0] ^ (~t[1] & t[2]); s[1] = t[1] ^ (~t[2] & t[3]); s[2] = t[2] ^ (~t[3] & t[4]);
-//            s[3] = t[3] ^ (~t[4] & t[0]); s[4] = t[4] ^ (~t[0] & t[1]);
-//            s[5] = t[5] ^ (~t[6] & t[7]); s[6] = t[6] ^ (~t[7] & t[8]); s[7] = t[7] ^ (~t[8] & t[9]);
-//            s[8] = t[8] ^ (~t[9] & t[5]); s[9] = t[9] ^ (~t[5] & t[6]);
-//            s[10] = t[10] ^ (~t[11] & t[12]); s[11] = t[11] ^ (~t[12] & t[13]); s[12] = t[12] ^ (~t[13] & t[14]);
-//            s[13] = t[13] ^ (~t[14] & t[10]); s[14] = t[14] ^ (~t[10] & t[11]);
-//            s[15] = t[15] ^ (~t[16] & t[17]); s[16] = t[16] ^ (~t[17] & t[18]); s[17] = t[17] ^ (~t[18] & t[19]);
-//            s[18] = t[18] ^ (~t[19] & t[15]); s[19] = t[19] ^ (~t[15] & t[16]);
-//            s[20] = t[20] ^ (~t[21] & t[22]); s[21] = t[21] ^ (~t[22] & t[23]); s[22] = t[22] ^ (~t[23] & t[24]);
-//            s[23] = t[23] ^ (~t[24] & t[20]); s[24] = t[24] ^ (~t[20] & t[21]);
+            s[0] = t[0] ^ (~t[1] & t[2]); s[1] = t[1] ^ (~t[2] & t[3]); s[2] = t[2] ^ (~t[3] & t[4]);
+            s[3] = t[3] ^ (~t[4] & t[0]); s[4] = t[4] ^ (~t[0] & t[1]);
+            s[5] = t[5] ^ (~t[6] & t[7]); s[6] = t[6] ^ (~t[7] & t[8]); s[7] = t[7] ^ (~t[8] & t[9]);
+            s[8] = t[8] ^ (~t[9] & t[5]); s[9] = t[9] ^ (~t[5] & t[6]);
+            s[10] = t[10] ^ (~t[11] & t[12]); s[11] = t[11] ^ (~t[12] & t[13]); s[12] = t[12] ^ (~t[13] & t[14]);
+            s[13] = t[13] ^ (~t[14] & t[10]); s[14] = t[14] ^ (~t[10] & t[11]);
+            s[15] = t[15] ^ (~t[16] & t[17]); s[16] = t[16] ^ (~t[17] & t[18]); s[17] = t[17] ^ (~t[18] & t[19]);
+            s[18] = t[18] ^ (~t[19] & t[15]); s[19] = t[19] ^ (~t[15] & t[16]);
+            s[20] = t[20] ^ (~t[21] & t[22]); s[21] = t[21] ^ (~t[22] & t[23]); s[22] = t[22] ^ (~t[23] & t[24]);
+            s[23] = t[23] ^ (~t[24] & t[20]); s[24] = t[24] ^ (~t[20] & t[21]);
 
-            ps = s - 1;
-            *++ps = t[0] ^ (~t[1] & t[2]); *++ps = t[1] ^ (~t[2] & t[3]); *++ps = t[2] ^ (~t[3] & t[4]);
-            *++ps = t[3] ^ (~t[4] & t[0]); *++ps = t[4] ^ (~t[0] & t[1]);
-            *++ps = t[5] ^ (~t[6] & t[7]); *++ps = t[6] ^ (~t[7] & t[8]); *++ps = t[7] ^ (~t[8] & t[9]);
-            *++ps = t[8] ^ (~t[9] & t[5]); *++ps = t[9] ^ (~t[5] & t[6]);
-            *++ps = t[10] ^ (~t[11] & t[12]); *++ps = t[11] ^ (~t[12] & t[13]); *++ps = t[12] ^ (~t[13] & t[14]);
-            *++ps = t[13] ^ (~t[14] & t[10]); *++ps = t[14] ^ (~t[10] & t[11]);
-            *++ps = t[15] ^ (~t[16] & t[17]); *++ps = t[16] ^ (~t[17] & t[18]); *++ps = t[17] ^ (~t[18] & t[19]);
-            *++ps = t[18] ^ (~t[19] & t[15]); *++ps = t[19] ^ (~t[15] & t[16]);
-            *++ps = t[20] ^ (~t[21] & t[22]); *++ps = t[21] ^ (~t[22] & t[23]); *++ps = t[22] ^ (~t[23] & t[24]);
-            *++ps = t[23] ^ (~t[24] & t[20]); *++ps = t[24] ^ (~t[20] & t[21]);
+//            ps = s - 1;
+//            *++ps = t[0] ^ (~t[1] & t[2]); *++ps = t[1] ^ (~t[2] & t[3]); *++ps = t[2] ^ (~t[3] & t[4]);
+//            *++ps = t[3] ^ (~t[4] & t[0]); *++ps = t[4] ^ (~t[0] & t[1]);
+//            *++ps = t[5] ^ (~t[6] & t[7]); *++ps = t[6] ^ (~t[7] & t[8]); *++ps = t[7] ^ (~t[8] & t[9]);
+//            *++ps = t[8] ^ (~t[9] & t[5]); *++ps = t[9] ^ (~t[5] & t[6]);
+//            *++ps = t[10] ^ (~t[11] & t[12]); *++ps = t[11] ^ (~t[12] & t[13]); *++ps = t[12] ^ (~t[13] & t[14]);
+//            *++ps = t[13] ^ (~t[14] & t[10]); *++ps = t[14] ^ (~t[10] & t[11]);
+//            *++ps = t[15] ^ (~t[16] & t[17]); *++ps = t[16] ^ (~t[17] & t[18]); *++ps = t[17] ^ (~t[18] & t[19]);
+//            *++ps = t[18] ^ (~t[19] & t[15]); *++ps = t[19] ^ (~t[15] & t[16]);
+//            *++ps = t[20] ^ (~t[21] & t[22]); *++ps = t[21] ^ (~t[22] & t[23]); *++ps = t[22] ^ (~t[23] & t[24]);
+//            *++ps = t[23] ^ (~t[24] & t[20]); *++ps = t[24] ^ (~t[20] & t[21]);
 
             // iota
             s[0] ^= rc[ir];
@@ -267,34 +274,40 @@ const typename SHA3<HashSize>::Lane SHA3<HashSize>::rc[] = {
 #include <cstdlib>
 
 template<int HashSize>
-char* calculate_sha3(FILE *is, char *digest, std::pair<char*, std::ptrdiff_t> &buffer)
+char* calculate_sha3(FILE *is, char *digest, char *buff, std::size_t buffsize)
 {
     SHA3<HashSize> s;
     while (!std::feof(is)) {
-        auto sz = std::fread(buffer.first, 1, buffer.second, is);
-        s.append(buffer.first, sz);
+        auto sz = std::fread(buff, 1, buffsize, is);
+        s.append(buff, sz);
     }
     s.hex_digest(digest);
     return digest;
 }
 
-#define HashSize 224
+#ifndef HASH_SIZE
+    #define HashSize 256
+#else
+    #define HashSize HASH_SIZE
+#endif
+#define BUFFSIZE 150000 * SHA3<HashSize>::rr
 
 int main(int argc, char *argv[]) {
     char digest[HashSize*2+1];
-    auto buffer = std::get_temporary_buffer<char>(90000 * SHA3<HashSize>::rr);
+    auto buff = new char[BUFFSIZE + 16];
+    auto aligned_buff = buff + (16 - (unsigned long)buff % 16);
 
     if (argc == 1) {
-        calculate_sha3<HashSize>(stdin, digest, buffer);
+        calculate_sha3<HashSize>(stdin, digest, aligned_buff, BUFFSIZE);
         std::cout << digest << "\t-\n";
     } else {
         for (int i = 1; i < argc; ++i) {
             FILE *f = std::fopen(argv[1], "rb");
-            calculate_sha3<HashSize>(f, digest, buffer);
+            calculate_sha3<HashSize>(f, digest, aligned_buff, BUFFSIZE);
             std::cout << digest << "\t" << argv[i] << '\n';
         }
     }
 
-    std::return_temporary_buffer(buffer.first);
+    delete[] buff;
     return 0;
 }
