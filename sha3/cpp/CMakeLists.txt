@@ -15,7 +15,7 @@ ADD_CUSTOM_TARGET(release
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -std=c++11")
 
-set(SOURCE_FILES sha3.cpp)
+set(SOURCE_FILES main.cc sha3.hpp)
 
 add_executable(sha3-224 ${SOURCE_FILES})
 set_target_properties(sha3-224 PROPERTIES COMPILE_DEFINITIONS "HASH_SIZE=224")
