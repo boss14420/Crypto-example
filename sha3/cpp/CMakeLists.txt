@@ -27,3 +27,4 @@ add_executable(sha3-512 ${SOURCE_FILES})
 set_target_properties(sha3-512 PROPERTIES COMPILE_DEFINITIONS "HASH_SIZE=512")
 
 add_executable(hash-by-block sha3.hpp hash_by_block.cc)
+add_library(sha3 SHARED sha3.hpp libsha3.cc)
