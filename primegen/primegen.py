@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import random
 import math
 
@@ -59,26 +60,30 @@ def prime_test(n, test_num=64):
     return True
 
 
-def gen_random_prime(size):
+def gen_random_prime(size, test_num=64):
     while True:
-        print("Generating random number ...")
-        with open('/dev/urandom', 'rb') as f:
-            b = f.read(size)
+        print("\nGenerating random number ...")
+        b = os.urandom(size)
 
         b = bytes([b[0] | 0x80]) + b[1:-1] + bytes([b[-1] | 0x1])
         n = int.from_bytes(b, byteorder='big')
         n = n // 6 * 6 - 1
         for step in range(int(size * 8 * math.log(2)) // 12):
-            print("Testing {0} ...".format(step))
-            if prime_test(n, 64):
+            print("Testing {0} ...\r".format(step), end='')
+            if prime_test(n, test_num):
                 return n
-            if prime_test(n + 2, 40):
+            if prime_test(n + 2, test_num):
                 return n + 2
             n += 6
 
 
+import sys
 def main():
-    n = gen_random_prime(3072 // 8)
+    size = 3072
+    if len(sys.argv) > 1:
+        size = int(sys.argv[1])
+    n = gen_random_prime(size // 8, 64)
+    print()
     print(n)
 
 
