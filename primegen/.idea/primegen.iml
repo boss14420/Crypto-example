@@ -4,5 +4,6 @@
     <content url="file://$MODULE_DIR$" />
     <orderEntry type="jdk" jdkName="PyPy 2.4.0 [Python 3.2.5] (/opt/pypy3/bin/pypy-c)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="module" module-name="rsaoaep" />
   </component>
 </module>

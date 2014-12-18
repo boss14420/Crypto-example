@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/primegen.iml" filepath="$PROJECT_DIR$/.idea/primegen.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../rsaoaep/.idea/rsaoaep.iml" filepath="$PROJECT_DIR$/../rsaoaep/.idea/rsaoaep.iml" />
     </modules>
   </component>
 </project>
