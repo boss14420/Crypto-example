@@ -16,13 +16,6 @@
  * =====================================================================================
  */
 
-/* 
- * File:   aes.hpp
- * Author: BKA140088
- *
- * Created on December 18, 2014, 1:44 PM
- */
-
 #ifndef AES_HPP
 #define	AES_HPP
 
@@ -35,14 +28,19 @@
 namespace internal {
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
+
+struct AES_traits_base {
+	//    typedef std::array<unsigned char, 16 > RoundKey;
+	typedef unsigned char const * RoundKey;
+	typedef std::array<unsigned char, 16> State;
+};
+
 template <int KeySize> struct AES_traits;
 
-template <> struct AES_traits<128> {
+template <> struct AES_traits<128> : public AES_traits_base {
 	static const int key_size = 128;
 	static const int nround = 10;
 	typedef std::array<unsigned char, key_size / 8 > Key;
-	//    typedef std::array<unsigned char, 16 > RoundKey;
-	typedef unsigned char const * RoundKey;
 	typedef std::array<unsigned char, 16 * (nround + 1) > ExpandedKey;
 };
 
@@ -110,32 +108,128 @@ static const unsigned char rcon[] = {
 	0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a
 };
 
-    //////////////////////////////////////////////////////////////////
-    /////// helpers //////////////////////////////////////////////////
-    template <int KeySize>
-    void AES_key_expand(typename AES_traits<KeySize>::Key const &key,
-            typename AES_traits<KeySize>::ExpandedKey &expandedKey);
+//////////////////////////////////////////////////////////////////
+/////// helpers //////////////////////////////////////////////////
+template <int KeySize>
+void AES_key_expand(typename AES_traits<KeySize>::Key const &key,
+        typename AES_traits<KeySize>::ExpandedKey &expandedKey);
 
-    template <>
-    void AES_key_expand<128>(typename AES_traits<128>::Key const &key,
-            typename AES_traits<128>::ExpandedKey &expandedKey) {
-        using std::uint32_t;
-    	using internal::sbox;
-        std::memcpy(expandedKey.data(), key.data(), 16);
-        auto kep = expandedKey.data() + 16;
-        for (int i = 1; i < AES_traits<128>::nround + 1; ++i) {
-            *kep = kep[-16] ^ sbox[kep[-3]] ^ rcon[i];
-            kep[1] = kep[-15] ^ sbox[kep[-2]];
-            kep[2] = kep[-14] ^ sbox[kep[-1]];
-            kep[3] = kep[-13] ^ sbox[kep[-4]];
+template <>
+void AES_key_expand<128>(typename AES_traits<128>::Key const &key,
+        typename AES_traits<128>::ExpandedKey &expandedKey) {
+    using std::uint32_t;
+    using internal::sbox;
+    std::memcpy(expandedKey.data(), key.data(), 16);
+    auto kep = expandedKey.data() + 16;
+    for (int i = 1; i < AES_traits<128>::nround + 1; ++i) {
+        *kep = kep[-16] ^ sbox[kep[-3]] ^ rcon[i];
+        kep[1] = kep[-15] ^ sbox[kep[-2]];
+        kep[2] = kep[-14] ^ sbox[kep[-1]];
+        kep[3] = kep[-13] ^ sbox[kep[-4]];
 
-            *(uint32_t*) (kep + 4) = *(uint32_t*) (kep - 12) ^ *(uint32_t*) (kep);
-            *(uint32_t*) (kep + 8) = *(uint32_t*) (kep - 8) ^ *(uint32_t*) (kep + 4);
-            *(uint32_t*) (kep + 12) = *(uint32_t*) (kep - 4) ^ *(uint32_t*) (kep + 8);
+        *(uint32_t*) (kep + 4) = *(uint32_t*) (kep - 12) ^ *(uint32_t*) (kep);
+        *(uint32_t*) (kep + 8) = *(uint32_t*) (kep - 8) ^ *(uint32_t*) (kep + 4);
+        *(uint32_t*) (kep + 12) = *(uint32_t*) (kep - 4) ^ *(uint32_t*) (kep + 8);
 
-            kep += 16;
-        }
+        kep += 16;
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+////////// encrypt
+	
+// Subs byte
+template <typename DataArrayIn, typename DataArrayOut>
+static void substitute(DataArrayIn const &in, DataArrayOut &&out) 
+{
+	out[0] = sbox[in[0]]; out[1] = sbox[in[1]]; out[2] = sbox[in[2]]; out[3] = sbox[in[3]];
+	out[4] = sbox[in[4]]; out[5] = sbox[in[5]]; out[6] = sbox[in[6]]; out[7] = sbox[in[7]];
+	out[8] = sbox[in[8]]; out[9] = sbox[in[9]]; out[10] = sbox[in[10]]; out[11] = sbox[in[11]];
+	out[12] = sbox[in[12]]; out[13] = sbox[in[13]]; out[14] = sbox[in[14]]; out[15] = sbox[in[15]];
+}
+
+// shift rows
+template <typename DataArrayIn, typename DataArrayOut>
+static void shift_rows(DataArrayIn const &in, DataArrayOut &&out) 
+{
+	out[0] = in[0], out[1] = in[5], out[2] = in[10], out[3] = in[15];
+	out[4] = in[4], out[5] = in[9], out[6] = in[14], out[7] = in[3];
+	out[8] = in[8], out[9] = in[13], out[10] = in[2], out[11] = in[7];
+	out[12] = in[12], out[13] = in[1], out[14] = in[6], out[15] = in[11];
+}
+
+// mix columns
+template <typename DataArrayIn, typename DataArrayOut>
+static void mix_columns(DataArrayIn const &in, DataArrayOut &&out) 
+{
+	out[0] = gmul2[in[0]] ^ gmul3[in[1]] ^ in[2] ^ in[3];
+	out[1] = in[0] ^ gmul2[in[1]] ^ gmul3[in[2]] ^ in[3];
+	out[2] = in[0] ^ in[1] ^ gmul2[in[2]] ^ gmul3[in[3]];
+	out[3] = gmul3[in[0]] ^ in[1] ^ in[2] ^ gmul2[in[3]];
+	out[4] = gmul2[in[4]] ^ gmul3[in[5]] ^ in[6] ^ in[7];
+	out[5] = in[4] ^ gmul2[in[5]] ^ gmul3[in[6]] ^ in[7];
+	out[6] = in[4] ^ in[5] ^ gmul2[in[6]] ^ gmul3[in[7]];
+	out[7] = gmul3[in[4]] ^ in[5] ^ in[6] ^ gmul2[in[7]];
+	out[8] = gmul2[in[8]] ^ gmul3[in[9]] ^ in[10] ^ in[11];
+	out[9] = in[8] ^ gmul2[in[9]] ^ gmul3[in[10]] ^ in[11];
+	out[10] = in[8] ^ in[9] ^ gmul2[in[10]] ^ gmul3[in[11]];
+	out[11] = gmul3[in[8]] ^ in[9] ^ in[10] ^ gmul2[in[11]];
+	out[12] = gmul2[in[12]] ^ gmul3[in[13]] ^ in[14] ^ in[15];
+	out[13] = in[12] ^ gmul2[in[13]] ^ gmul3[in[14]] ^ in[15];
+	out[14] = in[12] ^ in[13] ^ gmul2[in[14]] ^ gmul3[in[15]];
+	out[15] = gmul3[in[12]] ^ in[13] ^ in[14] ^ gmul2[in[15]];
+}
+
+template <typename DataArrayIn, typename DataArrayOut>
+static void add_roundkey(DataArrayIn const &in, DataArrayOut &&out, AES_traits_base::RoundKey const &roundkey) {
+	out[0] = in[0] ^ roundkey[0]; out[1] = in[1] ^ roundkey[1];
+	out[2] = in[2] ^ roundkey[2]; out[3] = in[3] ^ roundkey[3];
+	out[4] = in[4] ^ roundkey[4]; out[5] = in[5] ^ roundkey[5];
+	out[6] = in[6] ^ roundkey[6]; out[7] = in[7] ^ roundkey[7];
+	out[8] = in[8] ^ roundkey[8]; out[9] = in[9] ^ roundkey[9];
+	out[10] = in[10] ^ roundkey[10]; out[11] = in[11] ^ roundkey[11];
+	out[12] = in[12] ^ roundkey[12]; out[13] = in[13] ^ roundkey[13];
+	out[14] = in[14] ^ roundkey[14]; out[15] = in[15] ^ roundkey[15];
+}
+
+////////////////////////////////////////////////////////////////////////
+// AES round
+template <int nround>
+struct AESRound
+{
+	template <typename State1, typename State2, typename ExpandedKey>
+	static void encrypt(State1 &&out, State2 &&tmp, ExpandedKey const &expandedKey) {
+		AESRound_impl<nround, 1>::encrypt(std::forward<State1>(out),
+											std::forward<State2>(tmp), expandedKey);
+	}
+};
+
+template <int nround, int Round>
+struct AESRound_impl
+{
+	template <typename State1, typename State2, typename ExpandedKey>
+	static void encrypt(State1 &&out, State2 &&tmp, ExpandedKey const &expandedKey) {
+		substitute(out, std::forward<State1>(out));
+		shift_rows(out, std::forward<State2>(tmp));
+		mix_columns(tmp, std::forward<State1>(out));
+		add_roundkey(out, std::forward<State1>(out), expandedKey.data() + 16 * Round);
+		AESRound_impl<nround, Round + 1>::encrypt(std::forward<State1>(out),
+											 		std::forward<State2>(tmp), 
+													expandedKey);
+	}
+};
+
+// last round
+template <int nround>
+struct AESRound_impl<nround, nround>
+{
+	template <typename State1, typename State2, typename ExpandedKey>
+	static void encrypt(State1 &&out, State2 &&tmp, ExpandedKey const &expandedKey) {
+		substitute(out, std::forward<State2>(out));
+		shift_rows(out, std::forward<State1>(tmp));
+		add_roundkey(tmp, std::forward<State2>(out), expandedKey.data() + 16 *nround);
+	}
+};
 
 } // namespace internal
 
@@ -143,20 +237,20 @@ static const unsigned char rcon[] = {
 /////// AES     //////////////////////////////////////////////////
 
 template <int KeySize>
-class AES {
+class AES : public internal::AES_traits<KeySize> {
 public:
-    static const int key_size = KeySize;
-    static const int nround = internal::AES_traits<key_size>::nround;
-    typedef typename internal::AES_traits<key_size>::Key Key;
-    typedef typename internal::AES_traits<key_size>::RoundKey RoundKey;
-    typedef typename internal::AES_traits<key_size>::ExpandedKey ExpandedKey;
-    typedef std::array<unsigned char, 16> State;
+	static const int key_size = KeySize;
+	static const int nround = internal::AES_traits<key_size>::nround;
+	using typename internal::AES_traits<key_size>::Key;
+	using typename internal::AES_traits<key_size>::RoundKey;
+	using typename internal::AES_traits<key_size>::ExpandedKey;
+	using typename internal::AES_traits<key_size>::State;
 
 private:
 
 private:
 	Key key;
-    ExpandedKey expandedKey;
+	ExpandedKey expandedKey;
 
 public:
 	template <typename KeyArray>
@@ -166,92 +260,13 @@ public:
 	}
 
 private:
-    template <typename DataArrayIn, typename DataArrayOut>
-    static void substitute(DataArrayIn const &in, DataArrayOut &out) {
-    	using internal::sbox;
-        out[0] = sbox[in[0]]; out[1] = sbox[in[1]]; out[2] = sbox[in[2]]; out[3] = sbox[in[3]];
-        out[4] = sbox[in[4]]; out[5] = sbox[in[5]]; out[6] = sbox[in[6]]; out[7] = sbox[in[7]];
-        out[8] = sbox[in[8]]; out[9] = sbox[in[9]]; out[10] = sbox[in[10]]; out[11] = sbox[in[11]];
-        out[12] = sbox[in[12]]; out[13] = sbox[in[13]]; out[14] = sbox[in[14]]; out[15] = sbox[in[15]];
-    }
-
-    template <typename DataArrayIn, typename DataArrayOut>
-    static void shift_rows(DataArrayIn const &in, DataArrayOut &out) {
-        // shift rows
-        out[0] = in[0], out[1] = in[5], out[2] = in[10], out[3] = in[15];
-        out[4] = in[4], out[5] = in[9], out[6] = in[14], out[7] = in[3];
-        out[8] = in[8], out[9] = in[13], out[10] = in[2], out[11] = in[7];
-        out[12] = in[12], out[13] = in[1], out[14] = in[6], out[15] = in[11];
-    }
-
-    template <typename DataArrayIn, typename DataArrayOut>
-    static void mix_columns(DataArrayIn const &in, DataArrayOut &out) {
-		using internal::gmul2;
-    	using internal::gmul3;
-
-        // mix columns
-        out[0] = gmul2[in[0]] ^ gmul3[in[1]] ^ in[2] ^ in[3];
-        out[1] = in[0] ^ gmul2[in[1]] ^ gmul3[in[2]] ^ in[3];
-        out[2] = in[0] ^ in[1] ^ gmul2[in[2]] ^ gmul3[in[3]];
-        out[3] = gmul3[in[0]] ^ in[1] ^ in[2] ^ gmul2[in[3]];
-        out[4] = gmul2[in[4]] ^ gmul3[in[5]] ^ in[6] ^ in[7];
-        out[5] = in[4] ^ gmul2[in[5]] ^ gmul3[in[6]] ^ in[7];
-        out[6] = in[4] ^ in[5] ^ gmul2[in[6]] ^ gmul3[in[7]];
-        out[7] = gmul3[in[4]] ^ in[5] ^ in[6] ^ gmul2[in[7]];
-        out[8] = gmul2[in[8]] ^ gmul3[in[9]] ^ in[10] ^ in[11];
-        out[9] = in[8] ^ gmul2[in[9]] ^ gmul3[in[10]] ^ in[11];
-        out[10] = in[8] ^ in[9] ^ gmul2[in[10]] ^ gmul3[in[11]];
-        out[11] = gmul3[in[8]] ^ in[9] ^ in[10] ^ gmul2[in[11]];
-        out[12] = gmul2[in[12]] ^ gmul3[in[13]] ^ in[14] ^ in[15];
-        out[13] = in[12] ^ gmul2[in[13]] ^ gmul3[in[14]] ^ in[15];
-        out[14] = in[12] ^ in[13] ^ gmul2[in[14]] ^ gmul3[in[15]];
-        out[15] = gmul3[in[12]] ^ in[13] ^ in[14] ^ gmul2[in[15]];
-    }
-
-    template <typename DataArrayIn, typename DataArrayOut>
-    static void add_roundkey(DataArrayIn const &in, DataArrayOut &out, RoundKey const &roundkey) {
-        out[0] = in[0] ^ roundkey[0]; out[1] = in[1] ^ roundkey[1];
-        out[2] = in[2] ^ roundkey[2]; out[3] = in[3] ^ roundkey[3];
-        out[4] = in[4] ^ roundkey[4]; out[5] = in[5] ^ roundkey[5];
-        out[6] = in[6] ^ roundkey[6]; out[7] = in[7] ^ roundkey[7];
-        out[8] = in[8] ^ roundkey[8]; out[9] = in[9] ^ roundkey[9];
-        out[10] = in[10] ^ roundkey[10]; out[11] = in[11] ^ roundkey[11];
-        out[12] = in[12] ^ roundkey[12]; out[13] = in[13] ^ roundkey[13];
-        out[14] = in[14] ^ roundkey[14]; out[15] = in[15] ^ roundkey[15];
-    }
-    ////////////////////////////////////////////////////////////////////////
-    // AES round
-
-    template <typename DataArrayIn, typename DataArrayOut, int Round>
-    struct AESRound {
-
-        static void encrypt(DataArrayOut &out, State &tmp, ExpandedKey const &expandedKey) {
-            substitute(out, out);
-            shift_rows(out, tmp);
-            mix_columns(tmp, out);
-            add_roundkey(out, out, expandedKey.data() + 16 * Round);
-            AESRound<DataArrayIn, DataArrayOut, Round + 1 > ::encrypt(out, tmp, expandedKey);
-        }
-    };
-
-    // last round
-
-    template <typename DataArrayIn, typename DataArrayOut>
-    struct AESRound<DataArrayIn, DataArrayOut, nround> {
-
-        static void encrypt(DataArrayOut &out, State &tmp, ExpandedKey const &expandedKey) {
-            substitute(out, out);
-            shift_rows(out, tmp);
-            add_roundkey(tmp, out, expandedKey.data() + nround * 16);
-        }
-    };
 
 public:
     template <typename DataArrayIn, typename DataArrayOut>
-    void encrypt_block(DataArrayIn const &in, DataArrayOut &out) {
+    void encrypt_block(DataArrayIn const &in, DataArrayOut &&out) {
         State tmp;
-        add_roundkey(in, out, expandedKey.data());
-        AESRound<DataArrayIn, DataArrayOut, 1>::encrypt(out, tmp, expandedKey);
+		internal::add_roundkey(in, std::forward<DataArrayOut>(out), expandedKey.data());
+		internal::AESRound<nround>::encrypt(std::forward<DataArrayOut>(out), tmp, expandedKey);
     }
 };
 
