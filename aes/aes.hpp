@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <utility>
 
 namespace internal {
 /////////////////////////////////////////////////////////////////
@@ -180,16 +181,16 @@ static void mix_columns(DataArrayIn const &in, DataArrayOut &&out)
     out[15] = gmul3[in[12]] ^ in[13] ^ in[14] ^ gmul2[in[15]];
 }
 
-template <typename DataArrayIn, typename DataArrayOut>
-static void add_roundkey(DataArrayIn const &in, DataArrayOut &&out, AES_traits_base::RoundKey const &roundkey) {
-    out[0] = in[0] ^ roundkey[0]; out[1] = in[1] ^ roundkey[1];
-    out[2] = in[2] ^ roundkey[2]; out[3] = in[3] ^ roundkey[3];
-    out[4] = in[4] ^ roundkey[4]; out[5] = in[5] ^ roundkey[5];
-    out[6] = in[6] ^ roundkey[6]; out[7] = in[7] ^ roundkey[7];
-    out[8] = in[8] ^ roundkey[8]; out[9] = in[9] ^ roundkey[9];
-    out[10] = in[10] ^ roundkey[10]; out[11] = in[11] ^ roundkey[11];
-    out[12] = in[12] ^ roundkey[12]; out[13] = in[13] ^ roundkey[13];
-    out[14] = in[14] ^ roundkey[14]; out[15] = in[15] ^ roundkey[15];
+template <typename DataArrayIn1, typename DataArrayIn2, typename DataArrayOut>
+static void state_xor(DataArrayIn1 const &in1, DataArrayIn2 const &in2, DataArrayOut &&out) {
+    out[0] = in1[0] ^ in2[0]; out[1] = in1[1] ^ in2[1];
+    out[2] = in1[2] ^ in2[2]; out[3] = in1[3] ^ in2[3];
+    out[4] = in1[4] ^ in2[4]; out[5] = in1[5] ^ in2[5];
+    out[6] = in1[6] ^ in2[6]; out[7] = in1[7] ^ in2[7];
+    out[8] = in1[8] ^ in2[8]; out[9] = in1[9] ^ in2[9];
+    out[10] = in1[10] ^ in2[10]; out[11] = in1[11] ^ in2[11];
+    out[12] = in1[12] ^ in2[12]; out[13] = in1[13] ^ in2[13];
+    out[14] = in1[14] ^ in2[14]; out[15] = in1[15] ^ in2[15];
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -202,7 +203,7 @@ struct AESRound_impl
         substitute(out, std::forward<State1>(out));
         shift_rows(out, std::forward<State2>(tmp));
         mix_columns(tmp, std::forward<State1>(out));
-        add_roundkey(out, std::forward<State1>(out), expandedKey.data() + 16 * Round);
+        state_xor(out, std::begin(expandedKey) + 16 * Round, std::forward<State1>(out));
         AESRound_impl<nround, Round + 1>::encrypt(std::forward<State1>(out),
                                                     std::forward<State2>(tmp),
                                                     expandedKey);
@@ -215,9 +216,9 @@ struct AESRound_impl<nround, nround>
 {
     template <typename State1, typename State2, typename ExpandedKey>
     static void encrypt(State1 &&out, State2 &&tmp, ExpandedKey const &expandedKey) {
-        substitute(out, std::forward<State2>(out));
-        shift_rows(out, std::forward<State1>(tmp));
-        add_roundkey(tmp, std::forward<State2>(out), expandedKey.data() + 16 *nround);
+        substitute(out, std::forward<State1>(out));
+        shift_rows(out, std::forward<State2>(tmp));
+        state_xor(tmp, expandedKey.data() + 16 *nround, std::forward<State1>(out));
     }
 };
 
@@ -235,6 +236,8 @@ struct AESRound
 
 //////////////////////////////////////////////////////////////////
 /////// AES     //////////////////////////////////////////////////
+
+enum OperationMode { CTR_Mode, CBC_Mode };
 
 template <int KeySize>
 class AES : public internal::AES_traits<KeySize> {
@@ -265,9 +268,128 @@ public:
     template <typename DataArrayIn, typename DataArrayOut>
     void encrypt_block(DataArrayIn const &in, DataArrayOut &&out) {
         State tmp;
-        internal::add_roundkey(in, std::forward<DataArrayOut>(out), expandedKey.data());
+        internal::state_xor(in, expandedKey.data(), std::forward<DataArrayOut>(out));
         internal::AESRound<nround>::encrypt(std::forward<DataArrayOut>(out), tmp, expandedKey);
+    }
+
+    template <typename DataArrayIn, typename DataArrayOut>
+    void encrypt_array(DataArrayIn const &in, DataArrayOut &&out) {
+        auto ii = std::begin(in), ii_end = std::end(in);
+        auto oi = std::begin(out);
+        for (; ii != ii_end; std::advance(ii, 16)) {
+
+        }
     }
 };
 
+
+//////////////////////////////////////////////////////////////////////
+////// Operation Mode
+
+#define REF32(x) *((std::uint32_t*)&(x))
+#define PREF32(x) ((std::uint32_t*)(x))
+#define REF64(x) *((std::uint64_t*)&(x))
+#define PREF64(x) ((std::uint64_t*)(x))
+
+template <int KeySize>
+class AES_CTRMode
+{
+    typedef internal::AES_traits_base::State State;
+    typedef AES<KeySize> BlockCipher;
+    typedef typename BlockCipher::Key Key;
+
+    std::uint64_t nonce, counter;
+    BlockCipher block_cipher;
+
+    State extra;
+    int extra_size;
+
+public:
+    AES_CTRMode(Key const &key, std::uint64_t nonce)
+        : nonce(nonce), counter(0), block_cipher(key), extra_size(0)
+    {}
+
+    template <typename InputIter, typename OutputIter>
+    OutputIter encrypt_append(InputIter first, InputIter last, OutputIter d_first) {
+        return append(first, last, d_first);
+    }
+
+    template <typename InputIter, typename OutputIter>
+    OutputIter decrypt_append(InputIter first, InputIter last, OutputIter d_first) {
+        return append(first, last, d_first);
+    }
+
+    template <typename InputIter, typename OutputIter>
+    OutputIter encrypt_finish(InputIter first, InputIter last, OutputIter d_first) {
+        State noncecounter, mask;
+        append(first, last, d_first);
+
+        // TODO: big endian
+        *PREF64(noncecounter.data()) = nonce;
+        *PREF64(noncecounter.data()+8) = counter;
+
+        // PKCS5 padding
+        if (extra_size > 0) {
+            std::fill(std::begin(extra) + extra_size, std::end(extra), 16 - extra_size);
+        } else {
+            extra.fill(16);
+        }
+        block_cipher.encrypt_block(noncecounter, mask);
+        internal::state_xor(mask, extra, d_first);
+        return d_first + 16;
+    }
+
+    template <typename InputIter, typename OutputIter>
+    OutputIter decrypt_finish(InputIter first, InputIter last, OutputIter d_first) {
+        auto di = decrypt_append(std::forward<InputIter>(first), std::forward<InputIter>(last),
+                                 std::forward<OutputIter>(d_first));
+        return di - *(di - 1);
+    }
+
+
+private:
+    template <typename InputIter, typename OutputIter>
+    OutputIter append(InputIter &&first, InputIter &&last, OutputIter &&d_first) {
+//        std::uint64_t counter = 0;
+        State noncecounter, mask;
+
+        // TODO: big endian
+        *PREF64(noncecounter.data()) = nonce;
+        if (extra_size > 0) {
+            auto remaining = std::min<int>(16 - extra_size, last - first);
+            std::copy(first, first + remaining, std::begin(extra) + extra_size);
+            first += remaining; extra_size += remaining;
+            if (extra_size < 16)
+                return d_first;
+
+            // TODO: big endian
+            *PREF64(noncecounter.data()+8) = counter++;
+            block_cipher.encrypt_block(noncecounter, mask);
+            internal::state_xor(mask, extra, d_first);
+
+            d_first += 16;
+        }
+
+        encrypt_multiblock(first, last, d_first);
+
+        extra_size = last - first;
+        std::copy(first, last, std::begin(extra));
+        return d_first;
+    }
+
+    template <typename InputIter, typename OutputIter>
+    void encrypt_multiblock(InputIter &&first, InputIter &&last, OutputIter &&d_first) {
+//        std::uint64_t counter = 0;
+        State noncecounter, mask;
+
+        // TODO: big endian
+        *PREF64(noncecounter.data()) = nonce;
+        for (; first <= last - 16; first += 16, d_first += 16, ++counter) {
+            // TODO: big endian
+            *PREF64(noncecounter.data()+8) = counter;
+            block_cipher.encrypt_block(noncecounter, mask);
+            internal::state_xor(mask, first, d_first);
+        }
+    }
+};
 #endif	/* AES_HPP */
