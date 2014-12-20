@@ -54,8 +54,7 @@ class RSAKey(RSAPublicKey):
         self.dp = self.d % (p - 1)
         self.dq = self.d % (q - 1)
         self.qinv = invmod(q, p)
-        self.p, self.q = p, q
-        keysize = int(math.log(n, 256)) + 1
+        self.p, self.q = p, q keysize = int(math.log(n, 256)) + 1
         super().__init__(n, e, keysize)
 
     def public_key(self):
