@@ -58,6 +58,12 @@ public:
         mgf.hash(nullptr, 0, lHash.data());
     }
 
+    std::size_t max_message_len() const {
+        return k - 2*mgf.hLen() - 2;
+    }
+
+    std::size_t key_size() const { return k * 8; }
+
     byte* encrypt(byte* M, std::size_t mLen, byte *cipher) const
     {
         // length checking

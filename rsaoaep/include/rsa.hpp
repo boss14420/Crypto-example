@@ -160,7 +160,7 @@ public:
     friend
     std::ostream& operator<<(std::ostream &os, RSAKey const &key)
     {
-        os << static_cast<RSAPublicKey<BigInt>>(key) << '\n'
+        os << static_cast<RSAPublicKey<BigInt> const &>(key) << '\n'
             << std::hex << key._d << '\n'
             << std::hex << key._p << '\n'
             << std::hex << key._q << '\n'
@@ -173,7 +173,7 @@ public:
     friend
     std::istream& operator>>(std::istream &is, RSAKey &key)
     {
-        is >> static_cast<RSAPublicKey<BigInt>>(key)
+        is >> static_cast<RSAPublicKey<BigInt>&>(key)
             >> std::hex >> key._d
             >> std::hex >> key._p
             >> std::hex >> key._q

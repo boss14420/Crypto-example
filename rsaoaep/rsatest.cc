@@ -26,8 +26,8 @@
 //#include <boost/multiprecision/cpp_int.hpp>
 //#include <boost/multiprecision/gmp.hpp>
 
-#include "bigint.hpp"
-#include "rsa.hpp"
+#include "include/bigint.hpp"
+#include "include/rsa.hpp"
 
 int main(int argc, char *argv[]) {
 //    typedef boost::multiprecision::cpp_int Int;
