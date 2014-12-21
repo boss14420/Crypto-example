@@ -41,13 +41,13 @@ public:
 
 protected:
     BigInt _n, _e;
-    int _keysize;
+    std::size_t _keysize;
 
 public:
     RSAPublicKey() = default;
 
     template <typename BI1, typename BI2>
-    RSAPublicKey(BI1 &&n, BI2 &&e, int keysize)
+    RSAPublicKey(BI1 &&n, BI2 &&e, std::size_t keysize)
         : _n(std::forward<BI1>(n)), _e(std::forward<BI2>(e)),
           _keysize(keysize)
     {}
@@ -56,7 +56,7 @@ public:
 
     BigInt exponent() const { return _e; }
 
-    int keysize() const { return _keysize; }
+    std::size_t keysize() const { return _keysize; }
 
     BigInt encrypt_int(BigInt const &m) const {
         assert(m < _n);
@@ -89,8 +89,10 @@ class RSAKey : public RSAPublicKey<BigInt>
     BigInt _d, _dp, _dq, _qinv;
 
 public:
+    RSAKey() = default;
+
     template <typename BI1, typename BI2>
-    RSAKey(BI1 &&p, BI2 &&q, int keysize)
+    RSAKey(BI1 &&p, BI2 &&q, std::size_t keysize)
     : RSAPublicKey<BigInt>(p*q, 65537, keysize),
       _p(std::forward<BI1>(p)),
       _q(std::forward<BI2>(q)),
@@ -137,7 +139,7 @@ public:
 };
 
 template<typename BigInt>
-RSAKey<BigInt> generate_rsakey(int keysize) {
+RSAKey<BigInt> generate_rsakey(std::size_t keysize) {
     assert(keysize % 16 == 0);
     auto p = primegen<BigInt>::random_prime(keysize / 8 / 2);
     auto q = primegen<BigInt>::random_prime(keysize / 8 / 2);

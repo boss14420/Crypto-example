@@ -1,12 +1,12 @@
 /*
  * =====================================================================================
  *
- *       Filename:  util.hpp
+ *       Filename:  util.cc
  *
  *    Description:
  *
  *        Version:  1.0
- *        Created:  12/21/2014 01:14:44 AM
+ *        Created:  12/21/2014 06:09:38 PM
  *       Revision:  none
  *       Compiler:  gcc
  *
@@ -16,12 +16,7 @@
  * =====================================================================================
  */
 
-#ifndef __UTIL_HPP__
-#define __UTIL_HPP__
-
-#include <cstdio>
-#include <cstddef>
-#include <cstdint>
+#include "include/util.hpp"
 
 namespace util {
 
@@ -34,5 +29,4 @@ std::uint8_t *urandom(std::uint8_t *bytes, std::size_t len)
     return bytes;
 }
 
-}
-#endif // __UTIL_HPP__
+} // namespace util
