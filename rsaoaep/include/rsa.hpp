@@ -21,6 +21,7 @@
 
 #include <utility>
 #include <cassert>
+#include <iostream>
 #include "bigint.hpp"
 #include "primegen.hpp"
 
@@ -74,6 +75,25 @@ public:
         BigInt m = bigint::bytes_to_int<BigInt>(first, last);
         BigInt c = encrypt_int(m);
         int_to_bytes(m, d_first);
+    }
+
+    friend
+    std::ostream& operator<<(std::ostream &os, RSAPublicKey const &key)
+    {
+        os << std::dec << key.keysize() << '\n'
+           << std::hex << key.modulus() << '\n'
+           << std::hex << key.exponent();
+        return os;
+    }
+
+    friend
+    std::istream& operator>>(std::istream &is, RSAPublicKey &key)
+    {
+        is >> std::dec >> key._keysize
+           >> std::hex >> key._n
+           >> std::hex >> key._e;
+
+        return is;
     }
 };
 
@@ -135,6 +155,33 @@ public:
         BigInt c = bigint::bytes_to_int<BigInt>(first, last);
         BigInt m = decrypt_int(c);
         int_to_bytes(m, d_first);
+    }
+
+    friend
+    std::ostream& operator<<(std::ostream &os, RSAKey const &key)
+    {
+        os << static_cast<RSAPublicKey<BigInt>>(key) << '\n'
+            << std::hex << key._d << '\n'
+            << std::hex << key._p << '\n'
+            << std::hex << key._q << '\n'
+            << std::hex << key._dp << '\n'
+            << std::hex << key._dq << '\n'
+            << std::hex << key._qinv;
+        return os;
+    }
+
+    friend
+    std::istream& operator>>(std::istream &is, RSAKey &key)
+    {
+        is >> static_cast<RSAPublicKey<BigInt>>(key)
+            >> std::hex >> key._d
+            >> std::hex >> key._p
+            >> std::hex >> key._q
+            >> std::hex >> key._dp
+            >> std::hex >> key._dq
+            >> std::hex >> key._qinv;
+//        key._phi = (key._p - 1) * (key._q - 1);
+        return is;
     }
 };
 
