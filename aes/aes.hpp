@@ -377,12 +377,19 @@ private:
 
         // TODO: big endian
         *PREF64(noncecounter.data()) = nonce;
-        for (; first <= last - 16; first += 16, d_first += 16, ++counter) {
+        auto num_blocks = (last - first) / 16;
+#ifdef _OPENMP
+#pragma omp parallel for firstprivate(noncecounter) private(mask)
+#endif
+        for (auto i = 0; i < num_blocks ; ++i) {
             // TODO: big endian
-            *PREF64(noncecounter.data()+8) = counter;
+            *PREF64(noncecounter.data()+8) = counter + i;
             block_cipher.encrypt_block(noncecounter, mask);
-            internal::state_xor(mask, first, d_first);
+            internal::state_xor(mask, first + i*16, d_first + i*16);
         }
+        auto distance = num_blocks * 16;
+        d_first += distance; first += distance;
+        counter += num_blocks;
     }
 };
 
