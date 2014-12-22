@@ -137,14 +137,14 @@ public:
         BigInt n;
         unsigned offset;
         while (true) {
-            std::fprintf(stderr, "\nGenerating random number ...\n");
+//            std::fprintf(stderr, "\nGenerating random number ...\n");
             util::urandom(bytearray.data(), size);
             bytearray[0] |= 0x80; // MSB always 1
             bytearray[size - 1] |= 0x1; // LSB always 1
             n = bigint::bytes_to_int<BigInt>(&bytearray[0], size);
 //            mpz_import(n.get_mpz_t(), size, 1, 1, 0, 0, &bytearray[0]);
 
-            auto start = std::chrono::high_resolution_clock::now();
+//            auto start = std::chrono::high_resolution_clock::now();
     //        n = n/6*6 - 1;
     //        n -= n % prod_of_primes;
             auto sieve = init_sieve(n);
@@ -160,14 +160,14 @@ public:
     //        }
             for (offset = 0; offset < max_step; ++offset) {
                 if (!sieve[offset]) {
-                    std::fprintf(stderr, "Testing %u / %u ...\r", step, offset);
+//                    std::fprintf(stderr, "Testing %u / %u ...\r", step, offset);
                     ++step;
                     if (prime_test(n + offset, test_num))
                         break;
                 }
             }
-            std::chrono::duration<double> elapsed = std::chrono::high_resolution_clock::now() - start;
-            std::fprintf(stderr, "\nAverage test time %fs\n", elapsed.count() / (step + 1));
+//            std::chrono::duration<double> elapsed = std::chrono::high_resolution_clock::now() - start;
+//            std::fprintf(stderr, "\nAverage test time %fs\n", elapsed.count() / (step + 1));
             if (offset < max_step) break;
         }
         return n + offset;

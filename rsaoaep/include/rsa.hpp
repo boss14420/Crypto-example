@@ -188,8 +188,20 @@ public:
 template<typename BigInt>
 RSAKey<BigInt> generate_rsakey(std::size_t keysize) {
     assert(keysize % 16 == 0);
-    auto p = primegen<BigInt>::random_prime(keysize / 8 / 2);
-    auto q = primegen<BigInt>::random_prime(keysize / 8 / 2);
+    BigInt p, q;
+#ifdef _OPENMP
+#pragma omp parallel sections
+{
+#pragma omp section
+#endif
+    p = primegen<BigInt>::random_prime(keysize / 8 / 2, 64);
+#ifdef _OPENMP
+#pragma omp section
+#endif
+    q = primegen<BigInt>::random_prime(keysize / 8 / 2, 64);
+#ifdef _OPENMP
+}
+#endif
     return RSAKey<BigInt>(p, q, keysize);
 }
 
