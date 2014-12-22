@@ -42,6 +42,7 @@ template <int KeySize> struct AES_traits;
 template <> struct AES_traits<128> : public AES_traits_base {
     static const int key_size = 128;
     static const int nround = 10;
+    static const int block_size = 16;
     typedef std::array<unsigned char, key_size / 8 > Key;
     typedef std::array<unsigned char, 16 * (nround + 1) > ExpandedKey;
 };
