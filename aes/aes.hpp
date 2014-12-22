@@ -174,6 +174,18 @@ static void state_xor(DataArrayIn1 const &in1, DataArrayIn2 const &in2, DataArra
     out[14] = in1[14] ^ in2[14]; out[15] = in1[15] ^ in2[15];
 }
 
+template <typename DataArrayInOut, typename DataArrayIn>
+static void state_xor_inplace(DataArrayInOut &&inout, DataArrayIn const &mask) {
+    inout[0] ^= mask[0]; inout[1] ^= mask[1];
+    inout[2] ^= mask[2]; inout[3] ^= mask[3];
+    inout[4] ^= mask[4]; inout[5] ^= mask[5];
+    inout[6] ^= mask[6]; inout[7] ^= mask[7];
+    inout[8] ^= mask[8]; inout[9] ^= mask[9];
+    inout[10] ^= mask[10]; inout[11] ^= mask[11];
+    inout[12] ^= mask[12]; inout[13] ^= mask[13];
+    inout[14] ^= mask[14]; inout[15] ^= mask[15];
+}
+
 ////////////////////////////////////////////////////////////////////////
 // AES round
 template <int nround, int Round>
@@ -184,7 +196,7 @@ struct AESRound_impl
         substitute(out, std::forward<State1>(out));
         shift_rows(out, std::forward<State2>(tmp));
         mix_columns(tmp, std::forward<State1>(out));
-        state_xor(out, std::begin(expandedKey) + 16 * Round, std::forward<State1>(out));
+        state_xor_inplace(std::forward<State1>(out), std::begin(expandedKey) + 16*Round);
         AESRound_impl<nround, Round + 1>::encrypt(std::forward<State1>(out),
                                                     std::forward<State2>(tmp),
                                                     expandedKey);
